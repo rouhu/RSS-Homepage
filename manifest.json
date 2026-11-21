@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "__MSG_name__",
+  "version": "1.2",
+  "description": "__MSG_description__",
+  "icons": {
+    "128": "news_icon.png"
+  },
+  "action": {
+    "default_title": "__MSG_default_title__",
+    "default_icon": "news_action.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": ["storage"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "host_permissions": [
+    "https://news.google.com/*"
+  ],
+  "default_locale": "en"
+}

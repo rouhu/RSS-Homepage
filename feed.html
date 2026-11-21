@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>News briefing</title>
+  <link rel="stylesheet" href="feed.css">
+  <script src="feed.js" defer></script>
+</head>
+<body>
+  <main class="container">
+    <header class="briefing"><p id="date"></p></header>
+    <div id="widget-grid" class="widget-grid" aria-label="Widget grid">
+    <section id="google-widget" class="widget" aria-labelledby="section-title">
+      <div class="widget-header"><div><p class="eyebrow" id="widget-label">THE LATEST</p><h2 id="section-title">Top stories</h2></div><div class="widget-actions"><button id="refresh" type="button">Refresh</button><button id="remove-google" type="button">Remove</button></div></div>
+      <p id="status" role="status" aria-live="polite">Loading headlines…</p>
+      <div id="feed" class="stories"></div>
+    </section>
+    </div>
+    <section class="add-widget" aria-labelledby="add-title">
+      <h2 id="add-title">Add an RSS widget</h2>
+      <button id="add-google" type="button" hidden>Add Google News widget</button>
+      <form id="rss-form"><label for="rss-url" id="rss-label">RSS feed URL</label><div class="form-row"><input id="rss-url" type="url" required placeholder="https://rss.news.yahoo.com/rss/topstories"><label class="count-label" for="rss-count">Posts <input id="rss-count" type="number" min="1" max="50" value="12" required></label><button id="add-rss" type="submit">Add widget</button></div><p id="rss-form-status" role="status" aria-live="polite"></p></form>
+    </section>
+  </main>
+</body>
+</html>

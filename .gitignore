@@ -1,0 +1,11 @@
+# Local backups and editor/OS files
+*.backup-*
+*.bak
+*~
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local reference capture (may contain third-party content)
+example/
