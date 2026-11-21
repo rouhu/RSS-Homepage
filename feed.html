@@ -22,6 +22,10 @@
       <button id="add-google" type="button" hidden>Add Google News widget</button>
       <form id="rss-form"><label for="rss-url" id="rss-label">RSS feed URL</label><div class="form-row"><input id="rss-url" type="url" required placeholder="https://rss.news.yahoo.com/rss/topstories"><label class="count-label" for="rss-count">Posts <input id="rss-count" type="number" min="1" max="50" value="12" required></label><button id="add-rss" type="submit">Add widget</button></div><p id="rss-form-status" role="status" aria-live="polite"></p></form>
     </section>
+    <section class="add-widget" aria-labelledby="forex-add-title">
+      <h2 id="forex-add-title">Add Forex News widget</h2>
+      <form id="forex-form"><label for="forex-key">Forex News API key</label><div class="form-row"><input id="forex-key" type="password" autocomplete="off" required><button id="add-forex" type="submit">Add Forex News widget</button></div><p id="forex-form-status" role="status" aria-live="polite"></p></form>
+    </section>
   </main>
 </body>
 </html>

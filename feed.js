@@ -67,6 +67,9 @@ document.getElementById('rss-label').textContent = rssText.label;
 document.getElementById('add-rss').textContent = rssText.add;
 let customFeeds = [];
 let googleCount = 12;
+let forexConfig = null;
+const forexOrigin = 'https://forexnewsapi.com/*';
+const forexEndpoint = 'https://forexnewsapi.com/api/v1/category';
 let googleEnabled = true;
 let googlePosition = 0;
 let layout = [];
@@ -78,7 +81,7 @@ const gridText = spanish
 document.querySelector('.count-label').firstChild.textContent = `${gridText.posts} `;
 function validCount(value) { const count = Number(value); return Number.isInteger(count) && count >= 1 && count <= 50; }
 function persistSettings() {
-  const data = { customFeeds: customFeeds.map(item => ({ ...item })), googleCount, googleEnabled, googlePosition, widgetLayout: [...layout] };
+  const data = { customFeeds: customFeeds.map(item => ({ ...item })), googleCount, googleEnabled, googlePosition, forexConfig: forexConfig ? { ...forexConfig } : null, widgetLayout: [...layout] };
   saveQueue = saveQueue.catch(() => {}).then(() => chrome.storage.local.set(data));
   return saveQueue;
 }
@@ -320,6 +323,150 @@ function createCustomWidget(config) {
   loadCustomFeed(config, section);
 }
 
+const forexText = spanish
+  ? { title: 'Noticias Forex', key: 'Clave API', addTitle: 'Añadir widget de noticias Forex', add: 'Añadir widget Forex', replace: 'Cambiar clave API', missing: 'Introduce una clave API.', denied: 'Se necesita permiso para acceder a Forex News API.', network: 'No se pudo conectar con Forex News API.', auth: 'Clave API rechazada o acceso no autorizado.', limit: 'Límite de solicitudes alcanzado. Inténtalo más tarde.', invalid: 'Forex News API devolvió una respuesta no válida.', permission: 'Pulsa Actualizar para conceder acceso a Forex News API.', keySaved: 'Clave guardada.', storage: 'No se pudo guardar la configuración.' }
+  : { title: 'Forex News', key: 'API key', addTitle: 'Add Forex News widget', add: 'Add Forex News widget', replace: 'Replace API key', missing: 'Enter an API key.', denied: 'Permission to access Forex News API is required.', network: 'Could not connect to Forex News API.', auth: 'API key rejected or access is not authorized.', limit: 'Request limit reached. Try again later.', invalid: 'Forex News API returned an invalid response.', permission: 'Click Refresh to grant access to Forex News API.', keySaved: 'API key saved.', storage: 'Could not save settings.' };
+const forexUrlText = spanish
+  ? { label: 'URL y filtros de Forex News API', invalid: 'Usa una URL HTTPS de forexnewsapi.com/api/v1 o /api/v1/category.', saved: 'URL guardada. El número de noticias se configura por separado.' }
+  : { label: 'Forex News API URL and filters', invalid: 'Use an HTTPS URL at forexnewsapi.com/api/v1 or /api/v1/category.', saved: 'URL saved. The post count is configured separately.' };
+
+function parseForexUrl(value) {
+  let url;
+  try { url = new URL(value.trim()); } catch { return null; }
+  if (url.origin !== 'https://forexnewsapi.com' || url.username || url.password || url.hash || !['/api/v1', '/api/v1/', '/api/v1/category', '/api/v1/category/'].includes(url.pathname)) return null;
+  let token = '';
+  for (const name of [...url.searchParams.keys()]) {
+    if (name.toLowerCase() === 'token') { token = url.searchParams.get(name) || ''; url.searchParams.delete(name); }
+    if (name.toLowerCase() === 'items') url.searchParams.delete(name);
+  }
+  return { url: url.href, token: token.trim() };
+}
+
+function forexRequestUrl(config) {
+  const parsed = parseForexUrl(config.url || `${forexEndpoint}?section=general&page=1`);
+  if (!parsed) throw new Error('Invalid Forex API URL');
+  const url = new URL(parsed.url);
+  url.searchParams.set('items', String(config.count));
+  url.searchParams.set('token', config.key);
+  return url.href;
+}
+const forexForm = document.getElementById('forex-form');
+const forexKey = document.getElementById('forex-key');
+const forexFormStatus = document.getElementById('forex-form-status');
+document.getElementById('forex-add-title').textContent = forexText.addTitle;
+document.querySelector('label[for="forex-key"]').textContent = forexText.key;
+document.getElementById('add-forex').textContent = forexText.add;
+
+async function loadForex(section) {
+  const config = forexConfig && { ...forexConfig };
+  if (!config) return;
+  const stories = section.querySelector('.stories');
+  const message = section.querySelector('.widget-status');
+  const reload = section.querySelector('.refresh-widget');
+  reload.disabled = true; message.textContent = labels.loading; stories.replaceChildren();
+  try {
+    if (!await chrome.permissions.contains({ origins: [forexOrigin] })) { message.textContent = forexText.permission; return; }
+    const response = await fetch(forexRequestUrl(config), { credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer' });
+    if (!response.ok) {
+      message.textContent = response.status === 401 || response.status === 403 ? forexText.auth : response.status === 429 ? forexText.limit : `${forexText.network} HTTP ${response.status}.`;
+      return;
+    }
+    let result;
+    try { result = await response.json(); } catch { message.textContent = forexText.invalid; return; }
+    if (!result || !Array.isArray(result.data)) { message.textContent = forexText.invalid; return; }
+    for (const item of result.data.slice(0, config.count)) {
+      if (!item || typeof item !== 'object') continue;
+      const href = safeUrl(item.news_url);
+      if (!href) continue;
+      const article = document.createElement('article'); article.className = 'story';
+      const content = document.createElement('div'); content.className = 'story-content';
+      const publisher = document.createElement('p'); publisher.className = 'source'; publisher.textContent = typeof item.source_name === 'string' && item.source_name.trim() ? item.source_name : forexText.title;
+      const heading = document.createElement('h3');
+      const link = document.createElement('a'); link.href = href; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = typeof item.title === 'string' && item.title.trim() ? item.title : chrome.i18n.getMessage('unknown_title');
+      heading.append(link); content.append(publisher, heading);
+      const date = new Date(typeof item.date === 'string' ? item.date : '');
+      if (!Number.isNaN(date.valueOf())) { const time = document.createElement('time'); time.dateTime = date.toISOString(); time.textContent = new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short' }).format(date); content.append(time); }
+      article.append(content);
+      const imageUrl = safeUrl(item.image_url);
+      if (imageUrl) { const image = document.createElement('img'); image.className = 'thumbnail'; image.alt = ''; image.loading = 'lazy'; image.referrerPolicy = 'no-referrer'; image.addEventListener('error', () => image.remove()); image.src = imageUrl; article.append(image); }
+      stories.append(article);
+    }
+    message.textContent = stories.children.length ? '' : labels.empty;
+  } catch { message.textContent = forexText.network; }
+  finally { reload.disabled = false; }
+}
+
+function createForexWidget() {
+  const section = document.createElement('section'); section.className = 'widget';
+  const header = document.createElement('div'); header.className = 'widget-header';
+  const heading = document.createElement('h2'); heading.textContent = forexText.title;
+  const actions = document.createElement('div'); actions.className = 'widget-actions';
+  const reload = document.createElement('button'); reload.type = 'button'; reload.className = 'refresh-widget'; reload.textContent = labels.refresh; reload.title = forexConfig.url;
+  const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = rssText.remove;
+  actions.append(reload, remove); header.append(heading, actions);
+  const message = document.createElement('p'); message.className = 'widget-status'; message.setAttribute('role', 'status'); message.setAttribute('aria-live', 'polite');
+  const stories = document.createElement('div'); stories.className = 'stories';
+  section.append(header, message, stories); widgetGrid.append(section);
+  setupWidget(section, 'forex-news-api', forexConfig.count, async count => { const old = forexConfig.count; forexConfig.count = count; try { await persistSettings(); } catch (error) { forexConfig.count = old; throw error; } await loadForex(section); });
+  const keyForm = document.createElement('form'); keyForm.className = 'forex-key-config';
+  const label = document.createElement('label'); label.textContent = forexText.replace;
+  const input = document.createElement('input'); input.type = 'password'; input.autocomplete = 'off'; input.required = true; input.setAttribute('aria-label', forexText.replace);
+  const save = document.createElement('button'); save.type = 'submit'; save.textContent = gridText.save;
+  const feedback = document.createElement('span'); feedback.setAttribute('role', 'status');
+  label.append(input); keyForm.append(label, save, feedback); section.append(keyForm);
+  keyForm.addEventListener('submit', async event => {
+    event.preventDefault(); const key = input.value.trim();
+    if (!key) { feedback.textContent = forexText.missing; return; }
+    save.disabled = true; const old = forexConfig.key; forexConfig.key = key;
+    try { await persistSettings(); input.value = ''; feedback.textContent = forexText.keySaved; await loadForex(section); }
+    catch { forexConfig.key = old; feedback.textContent = forexText.storage; }
+    finally { save.disabled = false; }
+  });
+  const urlForm = document.createElement('form'); urlForm.className = 'forex-key-config forex-url-config';
+  const urlLabel = document.createElement('label'); urlLabel.textContent = forexUrlText.label;
+  const urlInput = document.createElement('input'); urlInput.type = 'text'; urlInput.required = true; urlInput.autocomplete = 'off'; urlInput.value = forexConfig.url; urlLabel.append(urlInput);
+  const urlSave = document.createElement('button'); urlSave.type = 'submit'; urlSave.textContent = gridText.save;
+  const urlFeedback = document.createElement('span'); urlFeedback.setAttribute('role', 'status');
+  urlForm.append(urlLabel, urlSave, urlFeedback); section.append(urlForm);
+  urlForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    const parsed = parseForexUrl(urlInput.value);
+    if (!parsed) { urlInput.value = forexConfig.url; urlFeedback.textContent = forexUrlText.invalid; return; }
+    urlInput.value = parsed.url;
+    const old = { ...forexConfig }; forexConfig.url = parsed.url;
+    if (parsed.token) forexConfig.key = parsed.token;
+    urlSave.disabled = true;
+    try { await persistSettings(); reload.title = parsed.url; urlFeedback.textContent = forexUrlText.saved; await loadForex(section); }
+    catch { forexConfig = old; urlInput.value = old.url; urlFeedback.textContent = forexText.storage; }
+    finally { urlSave.disabled = false; }
+  });
+  reload.addEventListener('click', async () => {
+    try { if (!await chrome.permissions.request({ origins: [forexOrigin] })) { message.textContent = forexText.denied; return; } await loadForex(section); }
+    catch { message.textContent = forexText.network; }
+  });
+  remove.addEventListener('click', async () => {
+    remove.disabled = true; const previous = forexConfig; const oldLayout = [...layout]; forexConfig = null; layout = layout.map(id => id === 'forex-news-api' ? null : id);
+    try { await persistSettings(); section.remove(); forexForm.hidden = false; drawGrid(); }
+    catch { forexConfig = previous; layout = oldLayout; message.textContent = forexText.storage; remove.disabled = false; }
+  });
+  loadForex(section);
+}
+
+forexForm.addEventListener('submit', async event => {
+  event.preventDefault(); forexFormStatus.textContent = '';
+  const key = forexKey.value.trim();
+  if (!key) { forexFormStatus.textContent = forexText.missing; return; }
+  if (forexConfig) return;
+  const button = document.getElementById('add-forex'); button.disabled = true;
+  try {
+    if (!await chrome.permissions.request({ origins: [forexOrigin] })) { forexFormStatus.textContent = forexText.denied; return; }
+    forexConfig = { key, count: 12, url: `${forexEndpoint}?section=general&page=1` }; layout.push('forex-news-api');
+    try { await persistSettings(); } catch (error) { forexConfig = null; layout.pop(); throw error; }
+    forexKey.value = ''; forexForm.hidden = true; createForexWidget(); drawGrid();
+  } catch { forexFormStatus.textContent = forexText.storage; }
+  finally { button.disabled = false; }
+});
+
 rssForm.addEventListener('submit', async event => {
   event.preventDefault(); rssFormStatus.textContent = '';
   const url = safeUrl(rssUrl.value.trim());
@@ -336,10 +483,11 @@ rssForm.addEventListener('submit', async event => {
     rssUrl.value = ''; createCustomWidget(config); drawGrid();
   } catch { rssFormStatus.textContent = rssText.failed; }
 });
-chrome.storage.local.get({ customFeeds: [], googleCount: 12, googleEnabled: true, googlePosition: 0, widgetLayout: [] }).then(saved => {
+chrome.storage.local.get({ customFeeds: [], googleCount: 12, googleEnabled: true, googlePosition: 0, forexConfig: null, widgetLayout: [] }).then(saved => {
   customFeeds = Array.isArray(saved.customFeeds) ? saved.customFeeds.filter(item => item && safeUrl(item.url)).map(item => ({ ...item, count: validCount(item.count) ? Number(item.count) : 12 })) : [];
   googleCount = validCount(saved.googleCount) ? Number(saved.googleCount) : 12;
   googleEnabled = saved.googleEnabled !== false;
+  forexConfig = saved.forexConfig && typeof saved.forexConfig.key === 'string' && saved.forexConfig.key.trim() ? { key: saved.forexConfig.key.trim(), count: validCount(saved.forexConfig.count) ? Number(saved.forexConfig.count) : 12, url: parseForexUrl(saved.forexConfig.url || `${forexEndpoint}?section=general&page=1`)?.url || `${forexEndpoint}?section=general&page=1` } : null;
   googlePosition = Number.isInteger(saved.googlePosition) && saved.googlePosition >= 0 && saved.googlePosition < 200 ? saved.googlePosition : 0;
   layout = Array.isArray(saved.widgetLayout) ? saved.widgetLayout.slice(0, 200).map(id => typeof id === 'string' ? id : null) : [];
   const seen = new Set(); layout = layout.map(id => { if (!id || seen.has(id)) return null; seen.add(id); return id; });
@@ -370,6 +518,8 @@ chrome.storage.local.get({ customFeeds: [], googleCount: 12, googleEnabled: true
     finally { addGoogle.disabled = false; }
   });
   customFeeds.forEach(createCustomWidget);
+  forexForm.hidden = Boolean(forexConfig);
+  if (forexConfig) createForexWidget();
   if (!googleEnabled) { google.remove(); layout = layout.map(id => id === 'google-news' ? null : id); }
   addGoogle.hidden = googleEnabled;
   drawGrid(); if (googleEnabled) loadNews();

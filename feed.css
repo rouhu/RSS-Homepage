@@ -39,6 +39,12 @@ button:disabled { opacity: .6; cursor: wait; }
 .form-row input { flex: 1; min-width: 0; padding: 10px 14px; border: 1px solid #dadce0; border-radius: 8px; font: inherit; }
 .widget-status, #rss-form-status { color: #5f6368; margin: 18px 0 0; }
 .widget-status:empty, #rss-form-status:empty { display: none; }
+#forex-form-status { color: #5f6368; margin: 18px 0 0; }
+#forex-form-status:empty { display: none; }
+.forex-key-config { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 14px; font-size: 13px; color: #5f6368; }
+.forex-key-config input { min-width: 0; flex: 1; padding: 6px; border: 1px solid #dadce0; border-radius: 6px; }
+.forex-url-config label { flex: 1 1 240px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.forex-url-config input { width: 100%; }
 .opml-entry { align-items: center; }
 .opml-entry button { flex: none; }
 .opml-url { color: #70757a; font-size: 12px; overflow-wrap: anywhere; margin: 8px 0 0; }

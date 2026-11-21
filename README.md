@@ -6,6 +6,7 @@ News Reader is a Chrome extension that opens a customizable news dashboard in a 
 
 - A removable Google News top-stories widget with localized headlines, publishers, and publication dates.
 - Multiple custom RSS and Atom widgets, with feed-provided thumbnails when available.
+- An optional Forex News API widget for general forex news, using your own API key.
 - OPML directories: browse nested feed entries and add selected feeds as individual widgets.
 - Drag widgets by their colored top bar, or focus the bar and use the arrow keys. Drop on a widget to swap positions or on an empty slot to move there.
 - Configure 1–50 posts per widget, subject to feed availability. Widget layout, feed URLs, and settings are saved in Chrome's local extension storage.
@@ -36,6 +37,12 @@ Prefer HTTPS: HTTP feeds are unencrypted. A feed may contain fewer entries than 
 ### OPML directories
 
 Adding an OPML URL creates a directory widget rather than automatically fetching all feeds in the document. The post count controls how many entries appear at a time; select **Show more** for additional entries. Select **Add feed** beside an entry, then submit the populated add-widget form and grant the requested permissions. Some directory entries may be obsolete.
+
+### Forex News API
+
+Enter your own Forex News API key in **Add Forex News widget** and approve access to `forexnewsapi.com`. The widget defaults to general news; its API URL setting accepts the provider's `/api/v1` and `/api/v1/category` endpoints and query filters, for example `https://forexnewsapi.com/api/v1?currencypair-include=EUR-USD,GBP-USD&page=1`. Save the URL to apply it. If the pasted URL contains `token`, it replaces the saved API key and is removed from the displayed URL. The separate post-count setting overrides any `items` parameter in the pasted URL and is limited to 1–50. Removing the widget deletes its saved key. Availability, quotas, filters, and access depend on your API plan.
+
+The API key is stored in Chrome's local extension storage, **not encrypted by this extension**. Anyone with access to the Chrome profile or extension storage may be able to read it. The provider requires the key in the request URL, which may be visible to the provider, browser developer tools, or diagnostic logs; the widget does not display it in its Refresh tooltip. Do not commit keys to the repository. If a key is exposed, rotate it with the provider.
 
 ### Language
 
