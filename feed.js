@@ -60,12 +60,15 @@ const rssText = spanish
   : { addTitle: 'Add an RSS widget', label: 'RSS feed URL', add: 'Add widget', remove: 'Remove', invalid: 'Enter a valid HTTP or HTTPS URL.', denied: 'Permission to access this feed is required.', duplicate: 'This feed has already been added.', failed: 'Could not load the feed. Check its URL and permissions.', invalidFeed: 'The response is not a valid RSS or Atom feed.' };
 const rssForm = document.getElementById('rss-form');
 const rssUrl = document.getElementById('rss-url');
+const rssTitle = document.getElementById('rss-title');
 const rssFormStatus = document.getElementById('rss-form-status');
 const widgetGrid = document.getElementById('widget-grid');
 document.getElementById('add-title').textContent = rssText.addTitle;
 document.getElementById('rss-label').textContent = rssText.label;
+document.getElementById('rss-title-label').textContent = spanish ? 'Título del widget (opcional)' : 'Widget title (optional)';
 document.getElementById('add-rss').textContent = rssText.add;
 let customFeeds = [];
+let iframeWidgets = [];
 let googleCount = 12;
 let forexConfig = null;
 const forexOrigin = 'https://forexnewsapi.com/*';
@@ -81,7 +84,7 @@ const gridText = spanish
 document.querySelector('.count-label').firstChild.textContent = `${gridText.posts} `;
 function validCount(value) { const count = Number(value); return Number.isInteger(count) && count >= 1 && count <= 50; }
 function persistSettings() {
-  const data = { customFeeds: customFeeds.map(item => ({ ...item })), googleCount, googleEnabled, googlePosition, forexConfig: forexConfig ? { ...forexConfig } : null, widgetLayout: [...layout] };
+  const data = { customFeeds: customFeeds.map(item => ({ ...item })), iframeWidgets: iframeWidgets.map(item => ({ ...item })), googleCount, googleEnabled, googlePosition, forexConfig: forexConfig ? { ...forexConfig } : null, widgetLayout: [...layout] };
   saveQueue = saveQueue.catch(() => {}).then(() => chrome.storage.local.set(data));
   return saveQueue;
 }
@@ -126,6 +129,7 @@ function setupWidget(section, id, initialCount, onSave) {
     event.preventDefault(); moveWidget(id, layout.indexOf(id) + offsets[event.key]); handle.focus();
   });
   section.prepend(handle);
+  if (onSave == null) return;
   const form = document.createElement('form'); form.className = 'widget-config';
   const label = document.createElement('label'); label.textContent = `${gridText.posts} `;
   const input = document.createElement('input'); input.type = 'number'; input.min = '1'; input.max = '50'; input.required = true; input.value = String(initialCount);
@@ -162,6 +166,9 @@ function feedOrigins(url) {
   // Yahoo's legacy RSS hostname redirects to a different hostname.
   if (host === 'rss.news.yahoo.com') origins.push('https://news.yahoo.com/*');
   if (host === 'newsrss.bbc.co.uk') origins.push('https://feeds.bbci.co.uk/*');
+  // MarketWatch's legacy RSS URLs redirect through its feed host to Dow Jones.
+  if (host === 'www.marketwatch.com') origins.push('https://feeds.marketwatch.com/*', 'https://feeds.content.dowjones.io/*');
+  if (host === 'feeds.marketwatch.com') origins.push('https://feeds.content.dowjones.io/*');
   return origins;
 }
 
@@ -202,7 +209,7 @@ function renderOpml(root, base, config, section, stories, message) {
   const entries = opmlEntries(root, base);
   if (!entries) throw new Error(rssText.invalidFeed);
   const name = directChild(directChild(root, 'head') || root, 'title')?.textContent?.trim() || new URL(config.url).hostname;
-  section.querySelector('h2').textContent = name;
+  section.querySelector('h2').textContent = config.title || name;
   if (!entries.length) { message.textContent = spanish ? 'Este OPML no contiene feeds válidos.' : 'This OPML contains no valid feed URLs.'; return; }
   message.textContent = spanish ? `${entries.length} feeds encontrados. Selecciona uno para añadirlo como widget.` : `${entries.length} feeds found. Select one to add it as a widget.`;
   let shown = 0;
@@ -275,7 +282,7 @@ async function loadCustomFeed(config, section) {
     const channel = root.localName === 'rss' ? directChild(root, 'channel') : root.localName === 'feed' ? root : null;
     if (xml.querySelector('parsererror') || !channel) throw new Error(rssText.invalidFeed);
     const name = directChild(channel, 'title')?.textContent?.trim() || new URL(config.url).hostname;
-    section.querySelector('h2').textContent = name;
+    section.querySelector('h2').textContent = config.title || name;
     const items = Array.from(channel.children).filter(node => ['item', 'entry'].includes(node.localName)).slice(0, config.count);
     for (const item of items) {
       const linkNode = Array.from(item.children).find(node => node.localName === 'link' && (!node.getAttribute('rel') || node.getAttribute('rel') === 'alternate'));
@@ -303,7 +310,7 @@ async function loadCustomFeed(config, section) {
 function createCustomWidget(config) {
   const section = document.createElement('section'); section.className = 'widget';
   const header = document.createElement('div'); header.className = 'widget-header';
-  const heading = document.createElement('h2'); heading.textContent = new URL(config.url).hostname;
+  const heading = document.createElement('h2'); heading.textContent = config.title || new URL(config.url).hostname;
   const actions = document.createElement('div'); actions.className = 'widget-actions';
   const reload = document.createElement('button'); reload.type = 'button'; reload.className = 'refresh-widget'; reload.textContent = labels.refresh; reload.title = config.url;
   const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = rssText.remove;
@@ -467,6 +474,91 @@ forexForm.addEventListener('submit', async event => {
   finally { button.disabled = false; }
 });
 
+const iframeText = spanish
+  ? { add: 'Añadir widget web', title: 'Título (opcional)', url: 'URL del sitio web', width: 'Ancho (px)', height: 'Alto (px)', settings: 'Configuración', invalid: 'Introduce una URL HTTP o HTTPS y dimensiones entre 100 y 3000 píxeles.', note: 'Algunos sitios bloquean la inserción o pueden no funcionar en este marco.', storage: 'No se pudo guardar la configuración.' }
+  : { add: 'Add website widget', title: 'Title (optional)', url: 'Website URL', width: 'Width (px)', height: 'Height (px)', settings: 'Settings', invalid: 'Enter an HTTP or HTTPS URL and dimensions between 100 and 3000 pixels.', note: 'Some sites block embedding or may not work in this frame.', storage: 'Could not save settings.' };
+const iframeAddForm = document.getElementById('iframe-add-form');
+const iframeAddStatus = document.getElementById('iframe-add-status');
+document.getElementById('iframe-add-title').textContent = iframeText.add;
+document.getElementById('iframe-add-button').textContent = iframeText.add;
+document.getElementById('iframe-title-label').textContent = iframeText.title;
+document.getElementById('iframe-url-label').textContent = iframeText.url;
+document.getElementById('iframe-width-label').textContent = iframeText.width;
+document.getElementById('iframe-height-label').textContent = iframeText.height;
+
+function validFrameDimension(value) {
+  const number = Number(value);
+  return Number.isInteger(number) && number >= 100 && number <= 3000;
+}
+
+function createIframeWidget(config) {
+  const section = document.createElement('section'); section.className = 'widget';
+  const header = document.createElement('div'); header.className = 'widget-header';
+  const heading = document.createElement('h2');
+  const actions = document.createElement('div'); actions.className = 'widget-actions';
+  const reload = document.createElement('button'); reload.type = 'button'; reload.textContent = labels.refresh;
+  const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = rssText.remove;
+  actions.append(reload, remove); header.append(heading, actions);
+  const frame = document.createElement('iframe'); frame.className = 'iframe-widget-frame';
+  frame.setAttribute('sandbox', 'allow-scripts allow-forms allow-popups');
+  frame.referrerPolicy = 'no-referrer'; frame.loading = 'lazy';
+  const note = document.createElement('p'); note.className = 'iframe-note'; note.textContent = iframeText.note;
+  section.append(header, frame, note); widgetGrid.append(section);
+  setupWidget(section, config.id, null, null);
+  function applySettings(loadUrl) {
+    heading.textContent = config.title || new URL(config.url).hostname;
+    frame.title = heading.textContent; frame.width = String(config.width); frame.height = String(config.height);
+    reload.title = config.url;
+    if (loadUrl) frame.src = config.url;
+  }
+  applySettings(true);
+  reload.addEventListener('click', () => { frame.src = config.url; });
+  remove.addEventListener('click', async () => {
+    remove.disabled = true;
+    const oldWidgets = iframeWidgets; const oldLayout = [...layout];
+    iframeWidgets = iframeWidgets.filter(widget => widget.id !== config.id); layout = layout.map(id => id === config.id ? null : id);
+    try { await persistSettings(); section.remove(); drawGrid(); }
+    catch { iframeWidgets = oldWidgets; layout = oldLayout; note.textContent = iframeText.storage; remove.disabled = false; }
+  });
+  const details = document.createElement('details'); details.className = 'iframe-settings';
+  const summary = document.createElement('summary'); summary.textContent = iframeText.settings;
+  const form = document.createElement('form');
+  function field(text, type, value) {
+    const label = document.createElement('label'); label.textContent = text;
+    const input = document.createElement('input'); input.type = type; input.value = String(value); label.append(input); return { label, input };
+  }
+  const title = field(iframeText.title, 'text', config.title); title.input.maxLength = 200;
+  const url = field(iframeText.url, 'url', config.url); url.input.required = true;
+  const width = field(iframeText.width, 'number', config.width); const height = field(iframeText.height, 'number', config.height);
+  for (const item of [width, height]) { item.input.min = '100'; item.input.max = '3000'; item.input.required = true; }
+  const dimensions = document.createElement('div'); dimensions.className = 'iframe-dimensions'; dimensions.append(width.label, height.label);
+  const save = document.createElement('button'); save.type = 'submit'; save.textContent = gridText.save;
+  const feedback = document.createElement('span'); feedback.setAttribute('role', 'status');
+  form.append(title.label, url.label, dimensions, save, feedback); details.append(summary, form); section.append(details);
+  form.addEventListener('submit', async event => {
+    event.preventDefault(); const value = safeUrl(url.input.value.trim());
+    if (!value || !validFrameDimension(width.input.value) || !validFrameDimension(height.input.value)) { feedback.textContent = iframeText.invalid; return; }
+    const old = { ...config }; Object.assign(config, { title: title.input.value.trim(), url: value, width: Number(width.input.value), height: Number(height.input.value) });
+    save.disabled = true;
+    try { await persistSettings(); applySettings(old.url !== config.url); feedback.textContent = gridText.saved; }
+    catch { Object.assign(config, old); feedback.textContent = iframeText.storage; }
+    finally { save.disabled = false; }
+  });
+}
+
+iframeAddForm.addEventListener('submit', async event => {
+  event.preventDefault(); iframeAddStatus.textContent = '';
+  const urlInput = document.getElementById('iframe-add-url');
+  const width = document.getElementById('iframe-add-width'); const height = document.getElementById('iframe-add-height');
+  const url = safeUrl(urlInput.value.trim());
+  if (!url || !validFrameDimension(width.value) || !validFrameDimension(height.value)) { iframeAddStatus.textContent = iframeText.invalid; return; }
+  const config = { id: `iframe:${crypto.randomUUID()}`, url, title: document.getElementById('iframe-add-title-input').value.trim(), width: Number(width.value), height: Number(height.value) };
+  const button = document.getElementById('iframe-add-button'); button.disabled = true; iframeWidgets.push(config); layout.push(config.id);
+  try { await persistSettings(); iframeAddForm.reset(); createIframeWidget(config); drawGrid(); }
+  catch { iframeWidgets = iframeWidgets.filter(widget => widget.id !== config.id); layout = layout.filter(id => id !== config.id); iframeAddStatus.textContent = iframeText.storage; }
+  finally { button.disabled = false; }
+});
+
 rssForm.addEventListener('submit', async event => {
   event.preventDefault(); rssFormStatus.textContent = '';
   const url = safeUrl(rssUrl.value.trim());
@@ -477,14 +569,15 @@ rssForm.addEventListener('submit', async event => {
   try {
     const granted = await chrome.permissions.request({ origins: feedOrigins(url) });
     if (!granted) { rssFormStatus.textContent = rssText.denied; return; }
-    const config = { url, count }; customFeeds.push(config);
+    const config = { url, count, title: rssTitle.value.trim() }; customFeeds.push(config);
     layout.push(url);
     try { await persistSettings(); } catch (error) { customFeeds.pop(); layout.pop(); throw error; }
-    rssUrl.value = ''; createCustomWidget(config); drawGrid();
+    rssUrl.value = ''; rssTitle.value = ''; createCustomWidget(config); drawGrid();
   } catch { rssFormStatus.textContent = rssText.failed; }
 });
-chrome.storage.local.get({ customFeeds: [], googleCount: 12, googleEnabled: true, googlePosition: 0, forexConfig: null, widgetLayout: [] }).then(saved => {
+chrome.storage.local.get({ customFeeds: [], iframeWidgets: [], googleCount: 12, googleEnabled: true, googlePosition: 0, forexConfig: null, widgetLayout: [] }).then(saved => {
   customFeeds = Array.isArray(saved.customFeeds) ? saved.customFeeds.filter(item => item && safeUrl(item.url)).map(item => ({ ...item, count: validCount(item.count) ? Number(item.count) : 12 })) : [];
+  iframeWidgets = Array.isArray(saved.iframeWidgets) ? saved.iframeWidgets.filter(item => item && typeof item.id === 'string' && item.id.startsWith('iframe:') && safeUrl(item.url) && validFrameDimension(item.width) && validFrameDimension(item.height)).map(item => ({ id: item.id, url: safeUrl(item.url), title: typeof item.title === 'string' ? item.title.slice(0, 200) : '', width: Number(item.width), height: Number(item.height) })) : [];
   googleCount = validCount(saved.googleCount) ? Number(saved.googleCount) : 12;
   googleEnabled = saved.googleEnabled !== false;
   forexConfig = saved.forexConfig && typeof saved.forexConfig.key === 'string' && saved.forexConfig.key.trim() ? { key: saved.forexConfig.key.trim(), count: validCount(saved.forexConfig.count) ? Number(saved.forexConfig.count) : 12, url: parseForexUrl(saved.forexConfig.url || `${forexEndpoint}?section=general&page=1`)?.url || `${forexEndpoint}?section=general&page=1` } : null;
@@ -518,6 +611,7 @@ chrome.storage.local.get({ customFeeds: [], googleCount: 12, googleEnabled: true
     finally { addGoogle.disabled = false; }
   });
   customFeeds.forEach(createCustomWidget);
+  iframeWidgets.forEach(createIframeWidget);
   forexForm.hidden = Boolean(forexConfig);
   if (forexConfig) createForexWidget();
   if (!googleEnabled) { google.remove(); layout = layout.map(id => id === 'google-news' ? null : id); }

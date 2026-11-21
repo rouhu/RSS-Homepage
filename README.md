@@ -7,6 +7,7 @@ News Reader is a Chrome extension that opens a customizable news dashboard in a 
 - A removable Google News top-stories widget with localized headlines, publishers, and publication dates.
 - Multiple custom RSS and Atom widgets, with feed-provided thumbnails when available.
 - An optional Forex News API widget for general forex news, using your own API key.
+- Website widgets that embed a URL in a sandboxed iframe with configurable pixel dimensions.
 - OPML directories: browse nested feed entries and add selected feeds as individual widgets.
 - Drag widgets by their colored top bar, or focus the bar and use the arrow keys. Drop on a widget to swap positions or on an empty slot to move there.
 - Configure 1–50 posts per widget, subject to feed availability. Widget layout, feed URLs, and settings are saved in Chrome's local extension storage.
@@ -28,7 +29,7 @@ After updating the project files, select **Reload** on the extension's card at `
 
 ### Add and manage feeds
 
-1. In **Add an RSS widget**, enter an HTTP or HTTPS feed URL and choose the number of posts.
+1. In **Add an RSS widget**, enter an HTTP or HTTPS feed URL and choose the number of posts. Optionally enter a widget title; otherwise the feed's title is used.
 2. Select **Add widget** and approve Chrome's requested host permissions.
 3. Use **Refresh** to reload a widget, **Remove** to remove it, and its post-count control and **Save** to change how many entries it shows.
 
@@ -37,6 +38,10 @@ Prefer HTTPS: HTTP feeds are unencrypted. A feed may contain fewer entries than 
 ### OPML directories
 
 Adding an OPML URL creates a directory widget rather than automatically fetching all feeds in the document. The post count controls how many entries appear at a time; select **Show more** for additional entries. Select **Add feed** beside an entry, then submit the populated add-widget form and grant the requested permissions. Some directory entries may be obsolete.
+
+### Website widgets
+
+In **Add website widget**, enter an HTTP or HTTPS URL, an optional title, and a width and height from 100 to 3000 pixels. Use the widget's **Settings** to change them later. The frame width is capped to the available grid-column width; its specified height is retained. Widget URLs and dimensions are saved locally. The iframe uses a sandbox that allows scripts, forms, and popups but not same-origin privileges. Some websites prohibit embedding or need capabilities restricted by the sandbox and will not work; an iframe's load event cannot reliably detect these failures. Embedded sites receive requests directly, including your IP address; only embed sites you trust. Prefer HTTPS for privacy.
 
 ### Forex News API
 
@@ -59,6 +64,7 @@ Google News uses the Spanish edition when Chrome's interface language starts wit
 ## Troubleshooting
 
 - **Permission or network error:** Refresh the widget and approve the requested host access. If the feed redirects to a different host, try adding the final URL instead. Providers may also block extension requests.
+- **MarketWatch feeds:** Legacy MarketWatch feed URLs redirect through `feeds.marketwatch.com` to `feeds.content.dowjones.io`; the extension requests access to these destinations when needed. Some legacy feeds may contain old articles even when they load successfully.
 - **HTTP 429:** The provider is rate-limiting requests. Wait before refreshing.
 - **Invalid feed:** Check that the URL serves RSS, Atom, or OPML XML rather than a web page. An OPML document lists feeds; it is not itself an article feed.
 - **Missing images:** Not all feeds provide images, and image hosts may block them.

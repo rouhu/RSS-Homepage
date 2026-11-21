@@ -37,6 +37,7 @@ button:disabled { opacity: .6; cursor: wait; }
 .add-widget label { display: block; color: #5f6368; font-size: 13px; margin-bottom: 8px; }
 .form-row, .widget-actions { display: flex; gap: 10px; }
 .form-row input { flex: 1; min-width: 0; padding: 10px 14px; border: 1px solid #dadce0; border-radius: 8px; font: inherit; }
+.rss-title-input { width: 100%; padding: 10px 14px; margin-bottom: 16px; border: 1px solid #dadce0; border-radius: 8px; font: inherit; }
 .widget-status, #rss-form-status { color: #5f6368; margin: 18px 0 0; }
 .widget-status:empty, #rss-form-status:empty { display: none; }
 #forex-form-status { color: #5f6368; margin: 18px 0 0; }
@@ -45,6 +46,17 @@ button:disabled { opacity: .6; cursor: wait; }
 .forex-key-config input { min-width: 0; flex: 1; padding: 6px; border: 1px solid #dadce0; border-radius: 6px; }
 .forex-url-config label { flex: 1 1 240px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .forex-url-config input { width: 100%; }
+.iframe-dimensions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.iframe-dimensions label { margin: 0; }
+.iframe-dimensions input { width: 85px; padding: 7px; border: 1px solid #dadce0; border-radius: 6px; font: inherit; }
+.iframe-widget-frame { display: block; max-width: 100%; border: 0; margin: 16px 0; background: #f1f3f4; }
+.iframe-settings { margin-top: 12px; color: #5f6368; font-size: 13px; }
+.iframe-settings summary { cursor: pointer; }
+.iframe-settings form { display: grid; gap: 8px; margin-top: 12px; }
+.iframe-settings input { width: 100%; min-width: 0; padding: 7px; border: 1px solid #dadce0; border-radius: 6px; font: inherit; }
+.iframe-settings .iframe-dimensions input { width: 85px; }
+.iframe-note, #iframe-add-status { color: #5f6368; font-size: 13px; }
+#iframe-add-status:empty { display: none; }
 .opml-entry { align-items: center; }
 .opml-entry button { flex: none; }
 .opml-url { color: #70757a; font-size: 12px; overflow-wrap: anywhere; margin: 8px 0 0; }
