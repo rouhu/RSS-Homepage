@@ -63,12 +63,25 @@ const rssUrl = document.getElementById('rss-url');
 const rssTitle = document.getElementById('rss-title');
 const rssFormStatus = document.getElementById('rss-form-status');
 const widgetGrid = document.getElementById('widget-grid');
+const widgetPanel = document.getElementById('widget-panel');
+const widgetPanelToggle = document.getElementById('widget-panel-toggle');
+function setWidgetPanelOpen(open) {
+  widgetPanel.hidden = !open;
+  widgetPanelToggle.setAttribute('aria-expanded', String(open));
+  widgetPanelToggle.textContent = open ? (spanish ? 'Ocultar formularios' : 'Hide widget forms') : (spanish ? 'Añadir widget' : 'Add Widget');
+}
+widgetPanelToggle.addEventListener('click', () => setWidgetPanelOpen(widgetPanel.hidden));
+setWidgetPanelOpen(false);
 document.getElementById('add-title').textContent = rssText.addTitle;
 document.getElementById('rss-label').textContent = rssText.label;
 document.getElementById('rss-title-label').textContent = spanish ? 'Título del widget (opcional)' : 'Widget title (optional)';
 document.getElementById('add-rss').textContent = rssText.add;
 let customFeeds = [];
 let iframeWidgets = [];
+let quickLinks = [];
+let quickEnabled = false;
+let todoTasks = [];
+let todoEnabled = false;
 let googleCount = 12;
 let forexConfig = null;
 const forexOrigin = 'https://forexnewsapi.com/*';
@@ -84,7 +97,7 @@ const gridText = spanish
 document.querySelector('.count-label').firstChild.textContent = `${gridText.posts} `;
 function validCount(value) { const count = Number(value); return Number.isInteger(count) && count >= 1 && count <= 50; }
 function persistSettings() {
-  const data = { customFeeds: customFeeds.map(item => ({ ...item })), iframeWidgets: iframeWidgets.map(item => ({ ...item })), googleCount, googleEnabled, googlePosition, forexConfig: forexConfig ? { ...forexConfig } : null, widgetLayout: [...layout] };
+  const data = { customFeeds: customFeeds.map(item => ({ ...item })), iframeWidgets: iframeWidgets.map(item => ({ ...item })), quickLinks: quickLinks.map(item => ({ ...item })), quickEnabled, todoTasks: todoTasks.map(item => ({ ...item })), todoEnabled, googleCount, googleEnabled, googlePosition, forexConfig: forexConfig ? { ...forexConfig } : null, widgetLayout: [...layout] };
   saveQueue = saveQueue.catch(() => {}).then(() => chrome.storage.local.set(data));
   return saveQueue;
 }
@@ -121,7 +134,7 @@ function setupWidget(section, id, initialCount, onSave) {
   const handle = document.createElement('div'); handle.className = 'drag-handle'; handle.draggable = true;
   handle.tabIndex = 0; handle.setAttribute('role', 'button'); handle.setAttribute('aria-label', gridText.drag); handle.title = gridText.drag;
   handle.addEventListener('dragstart', event => { dragging = id; section.classList.add('dragging'); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', id); });
-  handle.addEventListener('dragend', () => { dragging = null; section.classList.remove('dragging'); widgetGrid.querySelectorAll('.drag-over').forEach(node => node.classList.remove('drag-over')); });
+  handle.addEventListener('dragend', () => { dragging = null; stopDragScroll(); section.classList.remove('dragging'); widgetGrid.querySelectorAll('.drag-over').forEach(node => node.classList.remove('drag-over')); });
   handle.addEventListener('keydown', event => {
     const columns = getComputedStyle(widgetGrid).gridTemplateColumns.split(' ').length;
     const offsets = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -columns, ArrowDown: columns };
@@ -137,6 +150,13 @@ function setupWidget(section, id, initialCount, onSave) {
   const save = document.createElement('button'); save.type = 'submit'; save.textContent = gridText.save;
   const feedback = document.createElement('span'); feedback.setAttribute('role', 'status');
   form.append(label, save, feedback); section.append(form);
+  if (id !== 'forex-news-api') {
+    const configButton = document.createElement('button'); configButton.type = 'button'; configButton.className = 'compact-add'; configButton.textContent = spanish ? 'Configurar' : 'Config'; configButton.setAttribute('aria-expanded', 'false');
+    const configPanel = document.createElement('div'); configPanel.hidden = true;
+    configPanel.id = `widget-config-${crypto.randomUUID()}`; configButton.setAttribute('aria-controls', configPanel.id);
+    form.before(configButton, configPanel); configPanel.append(form);
+    configButton.addEventListener('click', () => { configPanel.hidden = !configPanel.hidden; configButton.setAttribute('aria-expanded', String(!configPanel.hidden)); });
+  }
   form.addEventListener('submit', async event => {
     event.preventDefault();
     if (!validCount(input.value)) { feedback.textContent = gridText.invalid; return; }
@@ -146,6 +166,27 @@ function setupWidget(section, id, initialCount, onSave) {
     finally { save.disabled = false; }
   });
 }
+
+let dragScrollFrame = null;
+let dragScrollSpeed = 0;
+function stopDragScroll() {
+  dragScrollSpeed = 0;
+  if (dragScrollFrame !== null) cancelAnimationFrame(dragScrollFrame);
+  dragScrollFrame = null;
+}
+function scrollDuringDrag() {
+  window.scrollBy(0, dragScrollSpeed);
+  dragScrollFrame = requestAnimationFrame(scrollDuringDrag);
+}
+document.addEventListener('dragover', event => {
+  if (!dragging) return;
+  const edge = Math.min(100, window.innerHeight / 4);
+  const distance = event.clientY < edge ? event.clientY - edge : event.clientY > window.innerHeight - edge ? event.clientY - (window.innerHeight - edge) : 0;
+  dragScrollSpeed = Math.max(-20, Math.min(20, distance / edge * 20));
+  if (!dragScrollSpeed) stopDragScroll();
+  else if (dragScrollFrame === null) dragScrollFrame = requestAnimationFrame(scrollDuringDrag);
+});
+document.addEventListener('dragleave', event => { if (!event.relatedTarget) stopDragScroll(); });
 
 widgetGrid.addEventListener('dragover', event => {
   const target = event.target.closest('[data-slot]');
@@ -157,7 +198,7 @@ widgetGrid.addEventListener('dragover', event => {
 widgetGrid.addEventListener('drop', event => {
   const target = event.target.closest('[data-slot]');
   if (!dragging || !target || target.parentElement !== widgetGrid) return;
-  event.preventDefault(); target.classList.remove('drag-over'); moveWidget(dragging, Number(target.dataset.slot));
+  event.preventDefault(); stopDragScroll(); target.classList.remove('drag-over'); moveWidget(dragging, Number(target.dataset.slot));
 });
 
 function feedOrigins(url) {
@@ -224,7 +265,7 @@ function renderOpml(root, base, config, section, stories, message) {
       const address = document.createElement('p'); address.className = 'opml-url'; address.textContent = entry.url;
       content.append(heading, address);
       const add = document.createElement('button'); add.type = 'button'; add.textContent = spanish ? 'Añadir feed' : 'Add feed';
-      add.addEventListener('click', () => { rssUrl.value = entry.url; rssUrl.focus(); rssUrl.scrollIntoView({ behavior: 'smooth', block: 'center' }); rssFormStatus.textContent = spanish ? 'Comprueba la URL y pulsa Añadir widget.' : 'Review the URL and select Add widget.'; });
+      add.addEventListener('click', () => { setWidgetPanelOpen(true); rssUrl.value = entry.url; rssUrl.focus(); rssUrl.scrollIntoView({ behavior: 'smooth', block: 'center' }); rssFormStatus.textContent = spanish ? 'Comprueba la URL y pulsa Añadir widget.' : 'Review the URL and select Add widget.'; });
       article.append(content, add); stories.append(article);
     }
     shown = Math.min(shown + config.count, entries.length);
@@ -306,6 +347,144 @@ async function loadCustomFeed(config, section) {
   } catch (error) { message.textContent = error.message === rssText.invalidFeed ? error.message : `${rssText.failed} ${spanish ? 'Si el feed redirige a otro host, añade la URL final.' : 'If the feed redirects to another host, add its final URL.'}`; }
   finally { button.disabled = false; }
 }
+
+const quickText = spanish
+  ? { title: 'Enlaces rápidos', addWidget: 'Añadir widget de enlaces rápidos', titleLabel: 'Título', url: 'URL', add: 'Añadir enlace', edit: 'Editar', cancel: 'Cancelar', empty: 'Aún no hay enlaces.', invalid: 'Introduce un título y una URL HTTP o HTTPS válida.', storage: 'No se pudieron guardar los enlaces.' }
+  : { title: 'Quick Links', addWidget: 'Add Quick Links widget', titleLabel: 'Title', url: 'URL', add: 'Add link', edit: 'Edit', cancel: 'Cancel', empty: 'No links yet.', invalid: 'Enter a title and a valid HTTP or HTTPS URL.', storage: 'Could not save Quick Links.' };
+const quickAdd = document.getElementById('quick-add');
+const quickAddStatus = document.getElementById('quick-add-status');
+document.getElementById('quick-add-title').textContent = quickText.title;
+quickAdd.textContent = quickText.addWidget;
+
+function createQuickWidget() {
+  const section = document.createElement('section'); section.className = 'widget compact-widget';
+  const header = document.createElement('div'); header.className = 'widget-header';
+  const heading = document.createElement('h2'); heading.textContent = quickText.title;
+  const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'icon-button icon-remove'; remove.textContent = '×'; remove.setAttribute('aria-label', `${rssText.remove}: ${quickText.title}`); remove.title = rssText.remove;
+  header.append(heading, remove);
+  const list = document.createElement('ul'); list.className = 'quick-list';
+  const message = document.createElement('p'); message.className = 'widget-status'; message.setAttribute('role', 'status');
+  const form = document.createElement('form'); form.className = 'quick-form';
+  const openForm = document.createElement('button'); openForm.type = 'button'; openForm.className = 'compact-add'; openForm.textContent = quickText.add; openForm.setAttribute('aria-expanded', 'false');
+  const titleLabel = document.createElement('label'); titleLabel.textContent = quickText.titleLabel;
+  const title = document.createElement('input'); title.required = true; title.maxLength = 200; titleLabel.append(title);
+  const urlLabel = document.createElement('label'); urlLabel.textContent = quickText.url;
+  const url = document.createElement('input'); url.type = 'url'; url.required = true; url.placeholder = 'https://example.com'; urlLabel.append(url);
+  const actions = document.createElement('div'); actions.className = 'widget-actions';
+  const save = document.createElement('button'); save.type = 'submit';
+  const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = quickText.cancel;
+  actions.append(save, cancel); form.append(titleLabel, urlLabel, actions);
+  section.append(header, list, message, openForm, form); widgetGrid.append(section); setupWidget(section, 'quick-links', null, null);
+  let editing = -1;
+  function reset() { editing = -1; form.reset(); save.textContent = quickText.add; form.hidden = true; openForm.hidden = false; openForm.setAttribute('aria-expanded', 'false'); }
+  function showForm() { form.hidden = false; openForm.hidden = true; openForm.setAttribute('aria-expanded', 'true'); message.textContent = ''; title.focus(); }
+  openForm.addEventListener('click', showForm);
+  function render() {
+    list.replaceChildren();
+    quickLinks.forEach((item, index) => {
+      const row = document.createElement('li');
+      const link = document.createElement('a'); link.href = item.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = item.title;
+      const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'icon-button icon-edit'; edit.textContent = '✎'; edit.setAttribute('aria-label', `${quickText.edit}: ${item.title}`); edit.title = quickText.edit;
+      const del = document.createElement('button'); del.type = 'button'; del.className = 'icon-button icon-remove'; del.textContent = '×'; del.setAttribute('aria-label', `${rssText.remove}: ${item.title}`); del.title = rssText.remove;
+      edit.addEventListener('click', () => { editing = index; title.value = item.title; url.value = item.url; save.textContent = gridText.save; showForm(); });
+      del.addEventListener('click', async () => {
+        const previous = quickLinks; quickLinks = quickLinks.filter((_, i) => i !== index); del.disabled = true;
+        try { await persistSettings(); reset(); render(); } catch { quickLinks = previous; message.textContent = quickText.storage; del.disabled = false; }
+      });
+      row.append(link, edit, del); list.append(row);
+    });
+    message.textContent = quickLinks.length ? '' : quickText.empty;
+  }
+  cancel.addEventListener('click', () => { reset(); render(); openForm.focus(); });
+  form.addEventListener('submit', async event => {
+    event.preventDefault(); const href = safeUrl(url.value.trim()); const name = title.value.trim();
+    if (!name || !href) { message.textContent = quickText.invalid; return; }
+    const previous = quickLinks; quickLinks = [...quickLinks];
+    if (editing < 0) quickLinks.push({ title: name, url: href }); else quickLinks[editing] = { title: name, url: href };
+    save.disabled = true;
+    try { await persistSettings(); reset(); render(); } catch { quickLinks = previous; message.textContent = quickText.storage; }
+    finally { save.disabled = false; }
+  });
+  remove.addEventListener('click', async () => {
+    const previous = [...layout]; quickEnabled = false; layout = layout.map(id => id === 'quick-links' ? null : id); remove.disabled = true;
+    try { await persistSettings(); section.remove(); quickAdd.hidden = false; drawGrid(); }
+    catch { quickEnabled = true; layout = previous; message.textContent = quickText.storage; remove.disabled = false; }
+  });
+  reset(); render();
+}
+quickAdd.addEventListener('click', async () => {
+  quickAdd.disabled = true; quickAddStatus.textContent = ''; quickEnabled = true; layout.push('quick-links');
+  try { await persistSettings(); createQuickWidget(); quickAdd.hidden = true; drawGrid(); }
+  catch { quickEnabled = false; layout = layout.filter(id => id !== 'quick-links'); quickAddStatus.textContent = quickText.storage; }
+  finally { quickAdd.disabled = false; }
+});
+
+const todoText = spanish
+  ? { title: 'Lista de tareas', addWidget: 'Añadir widget de tareas', task: 'Nueva tarea', add: 'Añadir tarea', empty: 'Aún no hay tareas.', invalid: 'Introduce una tarea.', storage: 'No se pudieron guardar las tareas.', delete: 'Eliminar tarea' }
+  : { title: 'To Do list', addWidget: 'Add To Do list widget', task: 'New task', add: 'Add task', empty: 'No tasks yet.', invalid: 'Enter a task.', storage: 'Could not save tasks.', delete: 'Delete task' };
+const todoAdd = document.getElementById('todo-add');
+const todoAddStatus = document.getElementById('todo-add-status');
+document.getElementById('todo-add-title').textContent = todoText.title;
+todoAdd.textContent = todoText.addWidget;
+
+function createTodoWidget() {
+  const section = document.createElement('section'); section.className = 'widget compact-widget';
+  const header = document.createElement('div'); header.className = 'widget-header';
+  const heading = document.createElement('h2'); heading.textContent = todoText.title;
+  const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'icon-button icon-remove'; remove.textContent = '×'; remove.setAttribute('aria-label', `${rssText.remove}: ${todoText.title}`); remove.title = rssText.remove;
+  header.append(heading, remove);
+  const list = document.createElement('ul'); list.className = 'todo-list';
+  const message = document.createElement('p'); message.className = 'widget-status'; message.setAttribute('role', 'status'); message.setAttribute('aria-live', 'polite');
+  const form = document.createElement('form'); form.className = 'todo-form';
+  const openForm = document.createElement('button'); openForm.type = 'button'; openForm.className = 'compact-add'; openForm.textContent = todoText.add; openForm.setAttribute('aria-expanded', 'false');
+  const input = document.createElement('input'); input.type = 'text'; input.maxLength = 200; input.required = true; input.placeholder = todoText.task; input.setAttribute('aria-label', todoText.task);
+  const add = document.createElement('button'); add.type = 'submit'; add.textContent = todoText.add;
+  const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = quickText.cancel;
+  form.hidden = true;
+  form.append(input, add, cancel); section.append(header, list, message, openForm, form); widgetGrid.append(section);
+  setupWidget(section, 'todo-list', null, null);
+  function closeForm() { form.reset(); form.hidden = true; openForm.hidden = false; openForm.setAttribute('aria-expanded', 'false'); }
+  openForm.addEventListener('click', () => { form.hidden = false; openForm.hidden = true; openForm.setAttribute('aria-expanded', 'true'); message.textContent = ''; input.focus(); });
+  cancel.addEventListener('click', () => { closeForm(); render(); openForm.focus(); });
+  function busy(value) { section.querySelectorAll('button, input').forEach(control => { control.disabled = value; }); }
+  function render() {
+    list.replaceChildren();
+    todoTasks.forEach((task, index) => {
+      const row = document.createElement('li');
+      const label = document.createElement('label');
+      const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = task.completed;
+      const text = document.createElement('span'); text.textContent = task.text;
+      const del = document.createElement('button'); del.type = 'button'; del.className = 'icon-button icon-remove'; del.textContent = '×'; del.setAttribute('aria-label', `${todoText.delete}: ${task.text}`); del.title = todoText.delete;
+      checkbox.addEventListener('change', () => update(todoTasks.map((item, i) => i === index ? { ...item, completed: checkbox.checked } : item)));
+      del.addEventListener('click', () => update(todoTasks.filter((_, i) => i !== index)));
+      label.append(checkbox, text); row.append(label, del); list.append(row);
+    });
+    message.textContent = todoTasks.length ? '' : todoText.empty;
+  }
+  async function update(next) {
+    const previous = todoTasks; todoTasks = next; busy(true);
+    try { await persistSettings(); render(); return true; }
+    catch { todoTasks = previous; render(); message.textContent = todoText.storage; return false; }
+    finally { busy(false); }
+  }
+  form.addEventListener('submit', async event => {
+    event.preventDefault(); const text = input.value.trim();
+    if (!text) { message.textContent = todoText.invalid; return; }
+    if (await update([...todoTasks, { text, completed: false }])) { closeForm(); openForm.focus(); }
+  });
+  remove.addEventListener('click', async () => {
+    const previous = [...layout]; todoEnabled = false; layout = layout.map(id => id === 'todo-list' ? null : id); busy(true);
+    try { await persistSettings(); section.remove(); todoAdd.hidden = false; drawGrid(); }
+    catch { todoEnabled = true; layout = previous; message.textContent = todoText.storage; busy(false); }
+  });
+  render();
+}
+todoAdd.addEventListener('click', async () => {
+  todoAdd.disabled = true; todoAddStatus.textContent = ''; todoEnabled = true; layout.push('todo-list');
+  try { await persistSettings(); createTodoWidget(); todoAdd.hidden = true; drawGrid(); }
+  catch { todoEnabled = false; layout = layout.filter(id => id !== 'todo-list'); todoAddStatus.textContent = todoText.storage; }
+  finally { todoAdd.disabled = false; }
+});
 
 function createCustomWidget(config) {
   const section = document.createElement('section'); section.className = 'widget';
@@ -415,12 +594,18 @@ function createForexWidget() {
   const stories = document.createElement('div'); stories.className = 'stories';
   section.append(header, message, stories); widgetGrid.append(section);
   setupWidget(section, 'forex-news-api', forexConfig.count, async count => { const old = forexConfig.count; forexConfig.count = count; try { await persistSettings(); } catch (error) { forexConfig.count = old; throw error; } await loadForex(section); });
+  const configButton = document.createElement('button'); configButton.type = 'button'; configButton.className = 'compact-add'; configButton.textContent = spanish ? 'Configurar' : 'Config'; configButton.setAttribute('aria-expanded', 'false');
+  const configPanel = document.createElement('div'); configPanel.id = 'forex-config-panel'; configPanel.hidden = true;
+  configButton.setAttribute('aria-controls', configPanel.id);
+  configPanel.append(section.querySelector('.widget-config'));
+  section.append(configButton, configPanel);
+  configButton.addEventListener('click', () => { configPanel.hidden = !configPanel.hidden; configButton.setAttribute('aria-expanded', String(!configPanel.hidden)); });
   const keyForm = document.createElement('form'); keyForm.className = 'forex-key-config';
   const label = document.createElement('label'); label.textContent = forexText.replace;
   const input = document.createElement('input'); input.type = 'password'; input.autocomplete = 'off'; input.required = true; input.setAttribute('aria-label', forexText.replace);
   const save = document.createElement('button'); save.type = 'submit'; save.textContent = gridText.save;
   const feedback = document.createElement('span'); feedback.setAttribute('role', 'status');
-  label.append(input); keyForm.append(label, save, feedback); section.append(keyForm);
+  label.append(input); keyForm.append(label, save, feedback); configPanel.append(keyForm);
   keyForm.addEventListener('submit', async event => {
     event.preventDefault(); const key = input.value.trim();
     if (!key) { feedback.textContent = forexText.missing; return; }
@@ -434,7 +619,7 @@ function createForexWidget() {
   const urlInput = document.createElement('input'); urlInput.type = 'text'; urlInput.required = true; urlInput.autocomplete = 'off'; urlInput.value = forexConfig.url; urlLabel.append(urlInput);
   const urlSave = document.createElement('button'); urlSave.type = 'submit'; urlSave.textContent = gridText.save;
   const urlFeedback = document.createElement('span'); urlFeedback.setAttribute('role', 'status');
-  urlForm.append(urlLabel, urlSave, urlFeedback); section.append(urlForm);
+  urlForm.append(urlLabel, urlSave, urlFeedback); configPanel.append(urlForm);
   urlForm.addEventListener('submit', async event => {
     event.preventDefault();
     const parsed = parseForexUrl(urlInput.value);
@@ -492,7 +677,7 @@ function validFrameDimension(value) {
 }
 
 function createIframeWidget(config) {
-  const section = document.createElement('section'); section.className = 'widget';
+  const section = document.createElement('section'); section.className = 'widget iframe-widget';
   const header = document.createElement('div'); header.className = 'widget-header';
   const heading = document.createElement('h2');
   const actions = document.createElement('div'); actions.className = 'widget-actions';
@@ -502,7 +687,7 @@ function createIframeWidget(config) {
   const frame = document.createElement('iframe'); frame.className = 'iframe-widget-frame';
   frame.setAttribute('sandbox', 'allow-scripts allow-forms allow-popups');
   frame.referrerPolicy = 'no-referrer'; frame.loading = 'lazy';
-  const note = document.createElement('p'); note.className = 'iframe-note'; note.textContent = iframeText.note;
+  const note = document.createElement('p'); note.className = 'iframe-note';
   section.append(header, frame, note); widgetGrid.append(section);
   setupWidget(section, config.id, null, null);
   function applySettings(loadUrl) {
@@ -575,7 +760,11 @@ rssForm.addEventListener('submit', async event => {
     rssUrl.value = ''; rssTitle.value = ''; createCustomWidget(config); drawGrid();
   } catch { rssFormStatus.textContent = rssText.failed; }
 });
-chrome.storage.local.get({ customFeeds: [], iframeWidgets: [], googleCount: 12, googleEnabled: true, googlePosition: 0, forexConfig: null, widgetLayout: [] }).then(saved => {
+chrome.storage.local.get({ customFeeds: [], iframeWidgets: [], quickLinks: [], quickEnabled: false, todoTasks: [], todoEnabled: false, googleCount: 12, googleEnabled: true, googlePosition: 0, forexConfig: null, widgetLayout: [] }).then(saved => {
+  todoTasks = Array.isArray(saved.todoTasks) ? saved.todoTasks.filter(item => item && typeof item.text === 'string' && item.text.trim()).map(item => ({ text: item.text.slice(0, 200), completed: item.completed === true })) : [];
+  todoEnabled = saved.todoEnabled === true;
+  quickLinks = Array.isArray(saved.quickLinks) ? saved.quickLinks.filter(item => item && typeof item.title === 'string' && item.title.trim() && typeof item.url === 'string' && safeUrl(item.url)).map(item => ({ title: item.title.slice(0, 200), url: safeUrl(item.url) })) : [];
+  quickEnabled = saved.quickEnabled === true;
   customFeeds = Array.isArray(saved.customFeeds) ? saved.customFeeds.filter(item => item && safeUrl(item.url)).map(item => ({ ...item, count: validCount(item.count) ? Number(item.count) : 12 })) : [];
   iframeWidgets = Array.isArray(saved.iframeWidgets) ? saved.iframeWidgets.filter(item => item && typeof item.id === 'string' && item.id.startsWith('iframe:') && safeUrl(item.url) && validFrameDimension(item.width) && validFrameDimension(item.height)).map(item => ({ id: item.id, url: safeUrl(item.url), title: typeof item.title === 'string' ? item.title.slice(0, 200) : '', width: Number(item.width), height: Number(item.height) })) : [];
   googleCount = validCount(saved.googleCount) ? Number(saved.googleCount) : 12;
@@ -612,6 +801,10 @@ chrome.storage.local.get({ customFeeds: [], iframeWidgets: [], googleCount: 12, 
   });
   customFeeds.forEach(createCustomWidget);
   iframeWidgets.forEach(createIframeWidget);
+  quickAdd.hidden = quickEnabled;
+  if (quickEnabled) createQuickWidget();
+  todoAdd.hidden = todoEnabled;
+  if (todoEnabled) createTodoWidget();
   forexForm.hidden = Boolean(forexConfig);
   if (forexConfig) createForexWidget();
   if (!googleEnabled) { google.remove(); layout = layout.map(id => id === 'google-news' ? null : id); }
