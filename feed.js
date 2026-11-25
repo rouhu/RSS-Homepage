@@ -93,6 +93,8 @@ let googlePosition = 0;
 let layout = [];
 let dragging = null;
 let saveQueue = Promise.resolve();
+let restoreRevision = null;
+let restoreInProgress = false;
 const gridText = spanish
   ? { posts: 'Noticias', save: 'Guardar', drag: 'Mover widget: usa las flechas', empty: 'Soltar widget aquí', saved: 'Configuración guardada.', invalid: 'Elige entre 1 y 50 noticias.' }
   : { posts: 'Posts', save: 'Save', drag: 'Move widget: use arrow keys', empty: 'Drop widget here', saved: 'Settings saved.', invalid: 'Choose between 1 and 50 posts.' };
@@ -100,9 +102,116 @@ document.querySelector('.count-label').firstChild.textContent = `${gridText.post
 function validCount(value) { const count = Number(value); return Number.isInteger(count) && count >= 1 && count <= 50; }
 function persistSettings() {
   const data = { customFeeds: customFeeds.map(item => ({ ...item })), iframeWidgets: iframeWidgets.map(item => ({ ...item })), quickLinks: quickLinks.map(item => ({ ...item })), quickEnabled, todoTasks: todoTasks.map(item => ({ ...item })), todoEnabled, notes: [...notes], notesEnabled, googleCount, googleEnabled, googlePosition, forexConfig: forexConfig ? { ...forexConfig } : null, widgetLayout: [...layout] };
-  saveQueue = saveQueue.catch(() => {}).then(() => chrome.storage.local.set(data));
+  saveQueue = saveQueue.catch(() => {}).then(() => navigator.locks.request('rss-homepage-storage', async () => {
+    const current = await chrome.storage.local.get({ restoreRevision: null });
+    if (restoreInProgress || current.restoreRevision !== restoreRevision) throw new Error('Dashboard needs reload');
+    await chrome.storage.local.set(data);
+  }));
   return saveQueue;
 }
+
+const backupText = spanish
+  ? { title: 'Copia de seguridad', warning: 'Las copias no están cifradas y pueden contener notas y URL privadas. La clave API de Forex no se incluye.', download: 'Descargar copia', failed: 'No se pudo preparar la copia de seguridad.' }
+  : { title: 'Backup', warning: 'Backup files are not encrypted and may contain private notes and URLs. The Forex API key is excluded.', download: 'Download backup', failed: 'Could not prepare the backup.' };
+const backupButton = document.getElementById('backup-download');
+const restoreButton = document.getElementById('backup-restore');
+const backupFile = document.getElementById('backup-file');
+const backupStatus = document.getElementById('backup-status');
+document.getElementById('backup-title').textContent = backupText.title;
+document.getElementById('backup-warning').textContent = backupText.warning;
+backupButton.textContent = backupText.download;
+restoreButton.textContent = spanish ? 'Restaurar copia' : 'Restore backup';
+backupButton.addEventListener('click', async () => {
+  backupButton.disabled = true; backupStatus.textContent = '';
+  try {
+    await saveQueue;
+    const saved = await chrome.storage.local.get({ customFeeds: [], iframeWidgets: [], quickLinks: [], quickEnabled: false, todoTasks: [], todoEnabled: false, notes: [], notesEnabled: false, googleCount: 12, googleEnabled: true, googlePosition: 0, forexConfig: null, widgetLayout: [] });
+    let forex = null;
+    if (saved.forexConfig) {
+      const url = new URL(saved.forexConfig.url || `${forexEndpoint}?section=general&page=1`);
+      for (const key of [...url.searchParams.keys()]) if (key.toLowerCase() === 'token') url.searchParams.delete(key);
+      url.username = ''; url.password = '';
+      forex = { url: url.href, count: saved.forexConfig.count };
+    }
+    const { customFeeds, iframeWidgets, quickLinks, quickEnabled, todoTasks, todoEnabled, notes, notesEnabled, googleCount, googleEnabled, googlePosition, widgetLayout } = saved;
+    const createdAt = new Date().toISOString();
+    const backup = { format: 'rss-homepage-backup', version: 1, createdAt, data: { customFeeds, iframeWidgets, quickLinks, quickEnabled, todoTasks, todoEnabled, notes, notesEnabled, googleCount, googleEnabled, googlePosition, forexConfig: forex, widgetLayout } };
+    const objectUrl = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' }));
+    const link = document.createElement('a'); link.href = objectUrl; link.download = `rss-homepage-backup-${createdAt.replace(/[:.]/g, '-')}.json`;
+    document.body.append(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+  } catch { backupStatus.textContent = backupText.failed; }
+  finally { backupButton.disabled = false; }
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.restoreRevision && changes.restoreRevision.newValue !== restoreRevision && !restoreInProgress) {
+    restoreInProgress = true;
+    location.reload();
+  }
+});
+
+function validateBackup(backup) {
+  if (!backup || backup.format !== 'rss-homepage-backup' || backup.version !== 1 || !backup.data || typeof backup.data !== 'object') throw new Error('Invalid backup');
+  const d = backup.data;
+  const list = value => Array.isArray(value) && value.length <= 10000;
+  const text = (value, max) => typeof value === 'string' && value.length <= max;
+  const title = value => text(value, 200);
+  if (!list(d.notes) || !d.notes.every(value => text(value, 1000000) && value.trim()) ||
+      !list(d.todoTasks) || !d.todoTasks.every(item => item && title(item.text) && item.text.trim() && typeof item.completed === 'boolean') ||
+      !list(d.quickLinks) || !d.quickLinks.every(item => item && title(item.title) && item.title.trim() && safeUrl(item.url)) ||
+      !list(d.customFeeds) || !d.customFeeds.every(item => item && safeUrl(item.url) && validCount(item.count) && (item.title === undefined || title(item.title))) ||
+      !list(d.iframeWidgets) || !d.iframeWidgets.every(item => item && text(item.id, 200) && item.id.startsWith('iframe:') && safeUrl(item.url) && title(item.title) && validFrameDimension(item.width) && validFrameDimension(item.height)) ||
+      !Array.isArray(d.widgetLayout) || d.widgetLayout.length > 200 || !d.widgetLayout.every(id => id === null || text(id, 8192)) ||
+      !['quickEnabled', 'todoEnabled', 'notesEnabled', 'googleEnabled'].every(key => typeof d[key] === 'boolean') ||
+      !validCount(d.googleCount) || !Number.isInteger(d.googlePosition) || d.googlePosition < 0 || d.googlePosition >= 200) throw new Error('Invalid backup');
+  let forex = null;
+  if (d.forexConfig !== null) {
+    if (!d.forexConfig || typeof d.forexConfig.url !== 'string' || !validCount(d.forexConfig.count)) throw new Error('Invalid backup');
+    const parsed = parseForexUrl(d.forexConfig.url);
+    if (!parsed || parsed.token) throw new Error('Invalid backup');
+    forex = { url: parsed.url, count: Number(d.forexConfig.count) };
+  }
+  return {
+    notes: [...d.notes], notesEnabled: d.notesEnabled,
+    todoTasks: d.todoTasks.map(item => ({ text: item.text, completed: item.completed })), todoEnabled: d.todoEnabled,
+    quickLinks: d.quickLinks.map(item => ({ title: item.title, url: safeUrl(item.url) })), quickEnabled: d.quickEnabled,
+    customFeeds: d.customFeeds.map(item => ({ url: safeUrl(item.url), count: Number(item.count), title: item.title || '' })),
+    iframeWidgets: d.iframeWidgets.map(item => ({ id: item.id, url: safeUrl(item.url), title: item.title, width: Number(item.width), height: Number(item.height) })),
+    googleCount: Number(d.googleCount), googleEnabled: d.googleEnabled, googlePosition: d.googlePosition,
+    forexConfig: forex, widgetLayout: [...d.widgetLayout]
+  };
+}
+
+restoreButton.addEventListener('click', () => backupFile.click());
+backupFile.addEventListener('change', async () => {
+  const file = backupFile.files[0]; backupFile.value = ''; backupStatus.textContent = '';
+  if (!file) return;
+  restoreButton.disabled = true; backupButton.disabled = true;
+  try {
+    if (file.size > 10 * 1024 * 1024) throw new Error('Invalid backup');
+    const data = validateBackup(JSON.parse(await file.text()));
+    const summary = spanish
+      ? `La copia contiene ${data.notes.length} notas, ${data.quickLinks.length} enlaces y ${data.todoTasks.length} tareas. Se reemplazarán los datos actuales. ¿Continuar?`
+      : `The backup contains ${data.notes.length} notes, ${data.quickLinks.length} links and ${data.todoTasks.length} tasks. Current dashboard data will be replaced. Continue?`;
+    if (!confirm(summary)) return;
+    if (data.forexConfig) {
+      const key = prompt(spanish ? 'Introduce la clave API de Forex para restaurar el widget. Cancelar interrumpe la restauración.' : 'Enter the Forex API key to restore the widget. Cancel stops the restore.');
+      if (key === null) return;
+      if (!key.trim()) { backupStatus.textContent = spanish ? 'La clave API de Forex es obligatoria.' : 'A Forex API key is required.'; return; }
+      data.forexConfig.key = key.trim();
+    }
+    restoreInProgress = true;
+    await saveQueue.catch(() => {});
+    await navigator.locks.request('rss-homepage-storage', async () => {
+      await chrome.storage.local.set({ ...data, restoreRevision: crypto.randomUUID() });
+    });
+    location.reload();
+  } catch {
+    restoreInProgress = false;
+    backupStatus.textContent = spanish ? 'No se pudo restaurar la copia. Comprueba el archivo y vuelve a intentarlo.' : 'Could not restore the backup. Check the file and try again.';
+  } finally { restoreButton.disabled = false; backupButton.disabled = false; }
+});
 
 function drawGrid() {
   const widgets = new Map(Array.from(widgetGrid.querySelectorAll(':scope > .widget')).map(widget => [widget.dataset.widgetId, widget]));
@@ -832,7 +941,8 @@ rssForm.addEventListener('submit', async event => {
     rssUrl.value = ''; rssTitle.value = ''; createCustomWidget(config); drawGrid();
   } catch { rssFormStatus.textContent = rssText.failed; }
 });
-chrome.storage.local.get({ customFeeds: [], iframeWidgets: [], quickLinks: [], quickEnabled: false, todoTasks: [], todoEnabled: false, notes: [], notesEnabled: false, googleCount: 12, googleEnabled: true, googlePosition: 0, forexConfig: null, widgetLayout: [] }).then(saved => {
+chrome.storage.local.get({ customFeeds: [], iframeWidgets: [], quickLinks: [], quickEnabled: false, todoTasks: [], todoEnabled: false, notes: [], notesEnabled: false, googleCount: 12, googleEnabled: true, googlePosition: 0, forexConfig: null, widgetLayout: [], restoreRevision: null }).then(saved => {
+  restoreRevision = saved.restoreRevision;
   notes = Array.isArray(saved.notes) ? saved.notes.filter(item => typeof item === 'string' && item.trim()) : [];
   notesEnabled = saved.notesEnabled === true;
   todoTasks = Array.isArray(saved.todoTasks) ? saved.todoTasks.filter(item => item && typeof item.text === 'string' && item.text.trim()).map(item => ({ text: item.text.slice(0, 200), completed: item.completed === true })) : [];

@@ -36,6 +36,9 @@ button:disabled { opacity: .6; cursor: wait; }
 #widget-panel-toggle { margin-top: 24px; }
 .add-widget { background: white; border: 1px solid #e0e3e7; border-radius: 18px; padding: 24px 28px; }
 .add-widget h2 { margin-bottom: 18px; }
+.backup-panel { margin-top: 24px; padding: 24px 28px; background: white; border: 1px solid #e0e3e7; border-radius: 18px; }
+.backup-panel p { color: #5f6368; font-size: 13px; line-height: 1.5; }
+#backup-status:empty { display: none; }
 .add-widget label { display: block; color: #5f6368; font-size: 13px; margin-bottom: 8px; }
 .form-row, .widget-actions { display: flex; gap: 10px; }
 .form-row input { flex: 1; min-width: 0; padding: 10px 14px; border: 1px solid #dadce0; border-radius: 8px; font: inherit; }

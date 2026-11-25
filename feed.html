@@ -53,6 +53,14 @@
       </form>
     </section>
     </div>
+    <section class="backup-panel" aria-labelledby="backup-title">
+      <h2 id="backup-title">Backup</h2>
+      <p id="backup-warning">Backup files are not encrypted and may contain private notes and URLs. The Forex API key is excluded.</p>
+      <button id="backup-download" type="button">Download backup</button>
+      <button id="backup-restore" type="button">Restore backup</button>
+      <input id="backup-file" type="file" accept=".json,application/json" hidden>
+      <p id="backup-status" role="status" aria-live="polite"></p>
+    </section>
   </main>
 </body>
 </html>

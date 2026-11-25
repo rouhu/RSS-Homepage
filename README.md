@@ -56,6 +56,12 @@ The API key is stored in Chrome's local extension storage, **not encrypted by th
 
 Google News uses the Spanish edition when Chrome's interface language starts with Spanish and the US English edition otherwise. The dashboard provides English and Spanish UI text.
 
+### Download a backup
+
+Select **Download backup** below the widgets to download a versioned JSON file containing saved notes, Quick Links, tasks, and widget settings and layout. It does not include Chrome browser bookmarks, fetched articles, or the Forex API key. Chrome's download settings determine whether you can choose a save location. Backups are not encrypted and may contain private notes and URLs, so store them securely. Backups are not automatic.
+
+To restore, select **Restore backup**, choose a previously downloaded JSON file, and confirm replacement of the current dashboard data. Download a current backup first if you may need it later. If the backup contains a Forex widget, enter its API key when prompted; cancelling stops the restore. The dashboard reloads after a successful restore. Feed host permissions are not included and may need to be granted again.
+
 ## Privacy and permissions
 
 - **Storage:** Widget settings and positions are stored locally in `chrome.storage.local`, not synchronized by this extension. Feed contents are fetched when widgets load rather than saved as settings.
