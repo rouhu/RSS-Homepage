@@ -87,6 +87,14 @@ button:disabled { opacity: .6; cursor: wait; }
 .todo-list input:checked + span { text-decoration: line-through; color: #70757a; }
 .todo-form { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
 .todo-form input { flex: 1 1 180px; min-width: 0; padding: 8px; border: 1px solid #dadce0; border-radius: 6px; font: inherit; }
+.notes-list { display: grid; gap: 10px; margin-top: 16px; }
+.note-card { background: #fff8d9; border: 1px solid #f0e3a7; border-radius: 10px; padding: 12px; }
+.note-card p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 0 10px; }
+.note-card .widget-actions { justify-content: flex-end; }
+.notes-form { display: grid; gap: 8px; margin-top: 16px; }
+.notes-form[hidden] { display: none; }
+.notes-form textarea { width: 100%; min-height: 120px; resize: vertical; padding: 10px; border: 1px solid #dadce0; border-radius: 6px; font: inherit; }
+#notes-add-status:empty { display: none; }
 @media (max-width: 680px) { .form-row { flex-wrap: wrap; } .form-row input { flex-basis: 100%; } .widget-actions { flex-wrap: wrap; justify-content: flex-end; } }
 .stories { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 32px; }
 .story { display: flex; gap: 18px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid #e8eaed; min-width: 0; }

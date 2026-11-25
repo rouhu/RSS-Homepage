@@ -82,6 +82,8 @@ let quickLinks = [];
 let quickEnabled = false;
 let todoTasks = [];
 let todoEnabled = false;
+let notes = [];
+let notesEnabled = false;
 let googleCount = 12;
 let forexConfig = null;
 const forexOrigin = 'https://forexnewsapi.com/*';
@@ -97,7 +99,7 @@ const gridText = spanish
 document.querySelector('.count-label').firstChild.textContent = `${gridText.posts} `;
 function validCount(value) { const count = Number(value); return Number.isInteger(count) && count >= 1 && count <= 50; }
 function persistSettings() {
-  const data = { customFeeds: customFeeds.map(item => ({ ...item })), iframeWidgets: iframeWidgets.map(item => ({ ...item })), quickLinks: quickLinks.map(item => ({ ...item })), quickEnabled, todoTasks: todoTasks.map(item => ({ ...item })), todoEnabled, googleCount, googleEnabled, googlePosition, forexConfig: forexConfig ? { ...forexConfig } : null, widgetLayout: [...layout] };
+  const data = { customFeeds: customFeeds.map(item => ({ ...item })), iframeWidgets: iframeWidgets.map(item => ({ ...item })), quickLinks: quickLinks.map(item => ({ ...item })), quickEnabled, todoTasks: todoTasks.map(item => ({ ...item })), todoEnabled, notes: [...notes], notesEnabled, googleCount, googleEnabled, googlePosition, forexConfig: forexConfig ? { ...forexConfig } : null, widgetLayout: [...layout] };
   saveQueue = saveQueue.catch(() => {}).then(() => chrome.storage.local.set(data));
   return saveQueue;
 }
@@ -486,6 +488,76 @@ todoAdd.addEventListener('click', async () => {
   finally { todoAdd.disabled = false; }
 });
 
+const notesText = spanish
+  ? { title: 'Notas', addWidget: 'Añadir widget de notas', add: 'Nueva nota', edit: 'Editar nota', delete: 'Eliminar nota', placeholder: 'Escribe una nota', empty: 'Aún no hay notas.', invalid: 'Escribe una nota.', storage: 'No se pudieron guardar las notas.' }
+  : { title: 'Notes', addWidget: 'Add Notes widget', add: 'New note', edit: 'Edit note', delete: 'Delete note', placeholder: 'Write a note', empty: 'No notes yet.', invalid: 'Write a note.', storage: 'Could not save notes.' };
+const notesAdd = document.getElementById('notes-add');
+const notesAddStatus = document.getElementById('notes-add-status');
+document.getElementById('notes-add-title').textContent = notesText.title;
+notesAdd.textContent = notesText.addWidget;
+
+function createNotesWidget() {
+  const section = document.createElement('section'); section.className = 'widget compact-widget';
+  const header = document.createElement('div'); header.className = 'widget-header';
+  const heading = document.createElement('h2'); heading.textContent = notesText.title;
+  const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'icon-button icon-remove'; remove.textContent = '×'; remove.setAttribute('aria-label', `${rssText.remove}: ${notesText.title}`); remove.title = rssText.remove;
+  header.append(heading, remove);
+  const list = document.createElement('div'); list.className = 'notes-list';
+  const message = document.createElement('p'); message.className = 'widget-status'; message.setAttribute('role', 'status'); message.setAttribute('aria-live', 'polite');
+  const openForm = document.createElement('button'); openForm.type = 'button'; openForm.className = 'compact-add'; openForm.textContent = notesText.add;
+  const form = document.createElement('form'); form.className = 'notes-form'; form.hidden = true;
+  const input = document.createElement('textarea'); input.required = true; input.placeholder = notesText.placeholder; input.setAttribute('aria-label', notesText.placeholder);
+  const actions = document.createElement('div'); actions.className = 'widget-actions';
+  const save = document.createElement('button'); save.type = 'submit'; save.textContent = gridText.save;
+  const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = quickText.cancel;
+  actions.append(save, cancel); form.append(input, actions); section.append(header, list, message, openForm, form); widgetGrid.append(section);
+  setupWidget(section, 'notes', null, null);
+  let editing = -1;
+  function closeForm() { editing = -1; form.reset(); form.hidden = true; openForm.hidden = false; }
+  function open(index) { editing = index; input.value = index < 0 ? '' : notes[index]; form.hidden = false; openForm.hidden = true; message.textContent = ''; input.focus(); }
+  function busy(value) { section.querySelectorAll('button, textarea').forEach(control => { control.disabled = value; }); }
+  function render() {
+    list.replaceChildren();
+    notes.forEach((note, index) => {
+      const card = document.createElement('article'); card.className = 'note-card';
+      const text = document.createElement('p'); text.textContent = note;
+      const buttons = document.createElement('div'); buttons.className = 'widget-actions';
+      const edit = document.createElement('button'); edit.type = 'button'; edit.textContent = notesText.edit;
+      const del = document.createElement('button'); del.type = 'button'; del.className = 'icon-button icon-remove'; del.textContent = '×'; del.setAttribute('aria-label', `${notesText.delete}: ${note.slice(0, 80)}`); del.title = notesText.delete;
+      edit.addEventListener('click', () => open(index));
+      del.addEventListener('click', async () => { if (await update(notes.filter((_, i) => i !== index))) closeForm(); });
+      buttons.append(edit, del); card.append(text, buttons); list.append(card);
+    });
+    message.textContent = notes.length ? '' : notesText.empty;
+  }
+  async function update(next) {
+    const previous = notes; notes = next; busy(true);
+    try { await persistSettings(); render(); return true; }
+    catch { notes = previous; message.textContent = notesText.storage; return false; }
+    finally { busy(false); }
+  }
+  openForm.addEventListener('click', () => open(-1));
+  cancel.addEventListener('click', () => { closeForm(); render(); openForm.focus(); });
+  form.addEventListener('submit', async event => {
+    event.preventDefault(); const text = input.value.trim();
+    if (!text) { message.textContent = notesText.invalid; return; }
+    const next = [...notes]; if (editing < 0) next.push(text); else next[editing] = text;
+    if (await update(next)) { closeForm(); openForm.focus(); }
+  });
+  remove.addEventListener('click', async () => {
+    const previous = [...layout]; notesEnabled = false; layout = layout.map(id => id === 'notes' ? null : id); busy(true);
+    try { await persistSettings(); section.remove(); notesAdd.hidden = false; drawGrid(); }
+    catch { notesEnabled = true; layout = previous; message.textContent = notesText.storage; busy(false); }
+  });
+  render();
+}
+notesAdd.addEventListener('click', async () => {
+  notesAdd.disabled = true; notesAddStatus.textContent = ''; notesEnabled = true; layout.push('notes');
+  try { await persistSettings(); createNotesWidget(); notesAdd.hidden = true; drawGrid(); }
+  catch { notesEnabled = false; layout = layout.filter(id => id !== 'notes'); notesAddStatus.textContent = notesText.storage; }
+  finally { notesAdd.disabled = false; }
+});
+
 function createCustomWidget(config) {
   const section = document.createElement('section'); section.className = 'widget';
   const header = document.createElement('div'); header.className = 'widget-header';
@@ -760,7 +832,9 @@ rssForm.addEventListener('submit', async event => {
     rssUrl.value = ''; rssTitle.value = ''; createCustomWidget(config); drawGrid();
   } catch { rssFormStatus.textContent = rssText.failed; }
 });
-chrome.storage.local.get({ customFeeds: [], iframeWidgets: [], quickLinks: [], quickEnabled: false, todoTasks: [], todoEnabled: false, googleCount: 12, googleEnabled: true, googlePosition: 0, forexConfig: null, widgetLayout: [] }).then(saved => {
+chrome.storage.local.get({ customFeeds: [], iframeWidgets: [], quickLinks: [], quickEnabled: false, todoTasks: [], todoEnabled: false, notes: [], notesEnabled: false, googleCount: 12, googleEnabled: true, googlePosition: 0, forexConfig: null, widgetLayout: [] }).then(saved => {
+  notes = Array.isArray(saved.notes) ? saved.notes.filter(item => typeof item === 'string' && item.trim()) : [];
+  notesEnabled = saved.notesEnabled === true;
   todoTasks = Array.isArray(saved.todoTasks) ? saved.todoTasks.filter(item => item && typeof item.text === 'string' && item.text.trim()).map(item => ({ text: item.text.slice(0, 200), completed: item.completed === true })) : [];
   todoEnabled = saved.todoEnabled === true;
   quickLinks = Array.isArray(saved.quickLinks) ? saved.quickLinks.filter(item => item && typeof item.title === 'string' && item.title.trim() && typeof item.url === 'string' && safeUrl(item.url)).map(item => ({ title: item.title.slice(0, 200), url: safeUrl(item.url) })) : [];
@@ -805,6 +879,8 @@ chrome.storage.local.get({ customFeeds: [], iframeWidgets: [], quickLinks: [], q
   if (quickEnabled) createQuickWidget();
   todoAdd.hidden = todoEnabled;
   if (todoEnabled) createTodoWidget();
+  notesAdd.hidden = notesEnabled;
+  if (notesEnabled) createNotesWidget();
   forexForm.hidden = Boolean(forexConfig);
   if (forexConfig) createForexWidget();
   if (!googleEnabled) { google.remove(); layout = layout.map(id => id === 'google-news' ? null : id); }
